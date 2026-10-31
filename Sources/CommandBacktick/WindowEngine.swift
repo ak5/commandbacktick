@@ -82,18 +82,18 @@ final class WindowEngine {
         return WindowSnapshot(app: app, windows: windows)
     }
 
-    func activate(_ choice: WindowChoice, from snapshot: WindowSnapshot) throws {
+    @MainActor func activate(_ choice: WindowChoice, from snapshot: WindowSnapshot) async throws {
+        try Task.checkCancellation()
         guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
         switch choice.target {
         case .chrome(let id):
-            _ = try chromeScript("set index of window id \(id) to 1\nactivate")
+            _ = try chromeScript("set minimized of window id \(id) to false\nset index of window id \(id) to 1")
         case .accessibility(let element):
             AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
             guard AXUIElementPerformAction(element, kAXRaiseAction as CFString) == .success else {
                 throw EngineError.failed("The window could not be raised. Try again.")
             }
-            choice.owner.activate(options: [])
         case .menu(let ordinal):
             let fresh = windowMenu(choice.owner)
             let index = resolvedMenuIndex(original: snapshot.windows.filter { $0.owner.processIdentifier == choice.owner.processIdentifier }.map(\.title),
@@ -103,6 +103,16 @@ final class WindowEngine {
                 throw EngineError.failed("The app changed its Window menu. Open the switcher again.")
             }
         }
+        // Raising a window does not transfer keyboard focus or the menu bar to its app.
+        let application = AXUIElementCreateApplication(choice.owner.processIdentifier)
+        AXUIElementSetMessagingTimeout(application, 0.4)
+        try await confirmAppActivation(targetPID: choice.owner.processIdentifier,
+            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+            request: {
+                guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
+                AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+                _ = choice.owner.activate(options: [])
+            })
     }
 
     private func stagePeers(for app: NSRunningApplication, focusedBounds: CGRect?) -> [WindowChoice] {
@@ -155,4 +165,21 @@ final class WindowEngine {
         }
         return result
     }
+}
+
+@MainActor func confirmAppActivation(targetPID: pid_t, frontmostPID: () -> pid_t?,
+                                    request: () throws -> Void,
+                                    pause: () async throws -> Void = { try await Task.sleep(nanoseconds: 100_000_000) }) async throws {
+    let previousPID = frontmostPID()
+    for _ in 0..<8 {
+        try Task.checkCancellation()
+        if let current = frontmostPID(), current != previousPID && current != targetPID {
+            throw CancellationError()
+        }
+        try request()
+        try await pause()
+        try Task.checkCancellation()
+        if frontmostPID() == targetPID { return }
+    }
+    throw EngineError.failed("The window was selected, but its app did not gain keyboard focus. Try again after the desktop transition finishes.")
 }

@@ -1,8 +1,10 @@
 import AppKit
 
 final class SwitcherPanel {
-    private let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-    init() {
+    private var panel: NSPanel?
+    private func makePanel() -> NSPanel {
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.identifier = NSUserInterfaceItemIdentifier("CommandBacktickSwitcher")
         panel.level = .popUpMenu
         panel.collectionBehavior = [.canJoinAllSpaces, .canJoinAllApplications, .fullScreenAuxiliary, .stationary]
         panel.isOpaque = false
@@ -11,10 +13,22 @@ final class SwitcherPanel {
         panel.hidesOnDeactivate = false
         panel.ignoresMouseEvents = true
         panel.isReleasedWhenClosed = false
+        return panel
     }
-    func hide() { panel.orderOut(nil) }
+    func hide() {
+        panel?.orderOut(nil)
+        panel?.close()
+        panel = nil
+    }
+    func redisplay(snapshot: WindowSnapshot, state: CycleState) {
+        // Recreate on the active desktop so Stage Manager cannot retain an old group assignment.
+        hide()
+        show(snapshot: snapshot, state: state)
+    }
     func show(snapshot: WindowSnapshot, state: CycleState) {
         guard let selectedID = state.selected, let selected = snapshot.windows.first(where: { $0.id == selectedID }) else { return }
+        let panel = self.panel ?? makePanel()
+        self.panel = panel
         let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main!
         let count = min(state.ids.count, 7, max(1, Int((screen.visibleFrame.width - 64) / 132)))
         let first = max(0, min(state.index - count / 2, state.ids.count - count))
@@ -69,7 +83,7 @@ final class SwitcherPanel {
         return field
     }
     func render(to url: URL) throws {
-        guard let view = panel.contentView,
+        guard let view = panel?.contentView,
               let rep = view.bitmapImageRepForCachingDisplay(in: view.bounds) else {
             throw EngineError.failed("No preview view")
         }

@@ -6,6 +6,8 @@ A native Swift/AppKit menu-bar app with no third-party dependencies.
 Hold Command and tap ` to browse, add Shift to go backward, then release Command
 to select. Escape cancels. Identified windows on the current desktop come first,
 followed by the app's windows elsewhere.
+Selecting a window also requests keyboard focus for its owning app and checks
+that it becomes foreground. A failed focus handoff is reported as an error.
 
 With Stage Manager, other apps' windows in the visible group come first. Starting
 from an editor grouped with a terminal gives: terminal → other local editor
@@ -16,6 +18,9 @@ with the grouped editor, then the terminal's other windows.
 The overlay shows app icons, window titles, and optional browser profile pictures.
 It joins other apps' Stage Manager groups and desktops. It does not capture window
 thumbnails or require Screen Recording.
+Each Command hold creates the overlay on the active desktop. While a selection
+remains open, a desktop-change notification recreates it on the new desktop with
+the same selection, rather than reusing a panel assigned to an earlier stage.
 
 ## Install from source
 
@@ -77,8 +82,28 @@ nice -n 10 ./scripts/build-app.sh
 ./scripts/install-app.sh
 ```
 
-Ad-hoc signatures change when the executable changes. An enabled permission
-entry may still refer to the previous build. If the app says permission is missing:
+By default the build script uses `codesign --sign -`, an **ad-hoc signature**.
+Its identity is tied to that particular executable, so rebuilding can invalidate
+existing permission approvals even when the app name and installation path stay
+the same. An enabled permission entry may therefore still refer to the previous build.
+
+Signing with a persistent local code-signing certificate can keep the identity
+stable across rebuilds without a paid Apple Developer membership. An Apple
+Developer ID certificate is used for public distribution. Certificate signing
+still requires initial permission approval. To configure it for your own builds,
+follow [Local signing](#local-signing) below.
+See [Apple's code-signing requirements](https://developer.apple.com/documentation/technotes/tn3127-inside-code-signing-requirements).
+
+Open the window-control permission pane directly from Terminal:
+
+```sh
+open 'x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility'
+```
+
+This opens **Accessibility**, named **Device Control and Data Access** on macOS
+27. It does not grant or reset permission; approve access in System Settings.
+
+If the app says permission is missing after an update:
 
 1. Leave CommandBacktick closed. Quit and reopen System Settings.
 2. In Accessibility / Device Control and Data Access, remove its entry with **−**.
@@ -140,13 +165,72 @@ assignments.
 
 ## Development and diagnostics
 
+### Local signing
+
+A persistent local code-signing certificate gives development builds a stable
+identity. A paid Apple Developer membership is not required for this setup.
+
+Open Keychain Access:
+
+```sh
+open -a "Keychain Access"
+```
+
+1. Choose **Keychain Access → Certificate Assistant → Create a Certificate**.
+2. Enter **CommandBacktick Local**, choose **Self Signed Root** for Identity Type
+   and **Code Signing** for Certificate Type, and create it in your login keychain.
+3. If the certificate is untrusted for signing, double-click it, expand **Trust**,
+   and set only **Code Signing → Always Trust**. Leave other trust policies at
+   their defaults. Close the dialog and authenticate when requested.
+4. Confirm that the identity appears in the valid code-signing list:
+
+   ```sh
+   security find-identity -v -p codesigning
+   ```
+
+Save the identity name once in a local, gitignored file, then build normally:
+
+```sh
+printf '%s\n' 'CommandBacktick Local' > signing.local.txt
+nice -n 10 ./scripts/build-app.sh
+./scripts/install-app.sh
+```
+
+The private key stays in Keychain. Do not export it into the repository or share
+it. `signing.local.txt` contains only the certificate name or fingerprint. Keep
+using the same certificate and bundle identifier for later builds. Replacing an
+ad-hoc build with this identity requires fresh permission approval once; later
+builds should retain that approval while the signing requirement stays the same.
+
+For a one-off override, use:
+
+```sh
+COMMAND_BACKTICK_SIGNING_IDENTITY='CommandBacktick Local' nice -n 10 ./scripts/build-app.sh
+```
+
+The environment variable overrides `signing.local.txt`; without either, builds
+use ad-hoc signing. An invalid configured identity fails the build instead of
+silently falling back to ad-hoc signing. To inspect the resulting identity:
+
+```sh
+codesign --verify --strict dist/CommandBacktick.app
+codesign --display --requirements - dist/CommandBacktick.app
+```
+
+Local signing does not provide Apple notarization or Developer ID trust on other
+people's Macs. Public notarized downloads use a Developer ID Application
+certificate and the Apple Developer Program. See [Apple's signing guide](https://developer.apple.com/library/archive/documentation/Security/Conceptual/CodeSigningGuide/Procedures/Procedures.html).
+
+### Checks and debug mode
+
 ```sh
 nice -n 10 swift test --jobs 1
 nice -n 10 python3 -m unittest discover -s Tests/Installation -p 'test_*.py'
 ```
 
 The tests cover window ordering, direction changes, Command-release confirmation,
-menu resolution, profile matching, safe image paths, and installer rollback.
+menu resolution, focus handoff and cancellation, profile matching, safe image
+paths, and installer rollback.
 They do not prove macOS permissions or real desktop transitions; use the manual
 checks above after changing window behavior.
 

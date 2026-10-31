@@ -12,8 +12,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cycle: CycleState?
     private var release = ReleaseState()
     private var timer: Timer?
+    private var activationTask: Task<Void, Never>?
     private var lastError: String?
     private var activationObserver: NSObjectProtocol?
+    private var spaceObserver: NSObjectProtocol?
     private var clickMonitor: Any?
     private var localClickMonitor: Any?
     private let accessibilityPermissionName = ProcessInfo.processInfo.operatingSystemVersion.majorVersion >= 27
@@ -61,6 +63,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                   app.processIdentifier != snapshot.app.processIdentifier else { return }
             self.cancel()
         }
+        spaceObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            guard let self, let snapshot = self.snapshot, let cycle = self.cycle,
+                  Shortcut.commandHeld else { return }
+            self.panel.redisplay(snapshot: snapshot, state: cycle)
+        }
         clickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.cancel() }
         localClickMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] event in
             self?.cancel(); return event
@@ -98,6 +107,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch { report(error.localizedDescription) }
     }
     private func step(_ direction: Int) {
+        activationTask?.cancel(); activationTask = nil
         guard AXIsProcessTrusted(), CGPreflightListenEventAccess() else {
             cancel(); report("A required permission is missing. Check Permissions in the menu."); return
         }
@@ -136,11 +146,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let selected = snapshot.windows.first { $0.id == cycle.selected }
             cancel()
             guard let selected else { return }
-            do { try engine.activate(selected, from: snapshot) }
-            catch { report(error.localizedDescription) }
+            activationTask = Task { @MainActor [weak self] in
+                guard let self else { return }
+                do { try await self.engine.activate(selected, from: snapshot) }
+                catch is CancellationError { }
+                catch { self.report(error.localizedDescription) }
+            }
         }
     }
     private func cancel() {
+        activationTask?.cancel(); activationTask = nil
         timer?.invalidate(); timer = nil; snapshot = nil; cycle = nil; panel.hide()
     }
     private func report(_ message: String) {
@@ -181,6 +196,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         cancel(); shortcut.stop()
         if let activationObserver { NSWorkspace.shared.notificationCenter.removeObserver(activationObserver) }
+        if let spaceObserver { NSWorkspace.shared.notificationCenter.removeObserver(spaceObserver) }
         if let clickMonitor { NSEvent.removeMonitor(clickMonitor) }
         if let localClickMonitor { NSEvent.removeMonitor(localClickMonitor) }
     }
