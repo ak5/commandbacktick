@@ -7,7 +7,8 @@ Hold Command and tap ` to browse, add Shift to go backward, then release Command
 to select. Escape cancels. Identified windows on the current desktop come first,
 followed by the app's windows elsewhere.
 Selecting a window also requests keyboard focus for its owning app and checks
-that it becomes foreground. A failed focus handoff is reported as an error.
+that it stays foreground with a focused window over consecutive checks. A failed
+focus handoff is reported as an error.
 
 With Stage Manager, other apps' windows in the visible group come first. Starting
 from an editor grouped with a terminal gives: terminal → other local editor
@@ -56,7 +57,8 @@ menu contains switching, Permissions, Launch at Login, and Quit.
    Access**. It allows reading and activating application windows.
 2. Grant **Input Monitoring** when requested. CommandBacktick checks Command and
    Escape while the switcher is open; it does not record typed text. Relaunch if
-   macOS requests it, then choose **Enable Command–`** again.
+   macOS requests it, then choose **Enable Command–`** again. Quick taps also work
+   when Command is released before the shortcut handler runs.
 3. Disable any other utility handling the same shortcut. With Stage Manager,
    also disable **Move focus to next window** under **System Settings → Keyboard
    → Keyboard Shortcuts → Keyboard**. Native group cycling can interfere even

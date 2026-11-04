@@ -7,8 +7,8 @@ final class ActivationTests: XCTestCase {
         var checks = 0
         try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
             request: { requests += 1 }, pause: { checks += 1 })
-        XCTAssertEqual(requests, 1)
-        XCTAssertEqual(checks, 1)
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(checks, 2)
     }
 
     @MainActor func testFocusHandoffWaitsForDesktopTransition() async throws {
@@ -16,8 +16,22 @@ final class ActivationTests: XCTestCase {
         var requests = 0
         try await confirmAppActivation(targetPID: 2, frontmostPID: { front },
             request: { requests += 1 }, pause: { if requests == 3 { front = 2 } })
-        XCTAssertEqual(requests, 3)
+        XCTAssertEqual(requests, 4)
         XCTAssertEqual(front, 2)
+    }
+
+    @MainActor func testForegroundAppWithoutFocusedWindowDoesNotConfirm() async throws {
+        var requests = 0
+        try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
+            focusReady: { requests >= 3 }, request: { requests += 1 }, pause: {})
+        XCTAssertEqual(requests, 4)
+    }
+
+    @MainActor func testTransientFocusMustSettle() async throws {
+        var requests = 0
+        try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
+            focusReady: { requests != 2 }, request: { requests += 1 }, pause: {})
+        XCTAssertEqual(requests, 4)
     }
 
     @MainActor func testAnotherAppTakingFocusCancelsFurtherRequests() async {

@@ -57,6 +57,11 @@ final class CoreTests: XCTestCase {
         XCTAssertFalse(state.update(held: true))
         XCTAssertTrue(state.update(held: false))
     }
+    func testShortcutHoldCanBeReleasedBeforeFirstPoll() {
+        var state = ReleaseState()
+        _ = state.update(held: true) // Command–` event delivered after key-up.
+        XCTAssertTrue(state.update(held: false))
+    }
     func testProfileDiscoveryAndPathValidation() throws {
         let decoder = JSONDecoder(); decoder.keyDecodingStrategy = .convertFromSnakeCase
         let data = Data("""

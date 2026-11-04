@@ -87,7 +87,7 @@ final class WindowEngine {
         guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
         switch choice.target {
         case .chrome(let id):
-            _ = try chromeScript("set minimized of window id \(id) to false\nset index of window id \(id) to 1")
+            _ = try chromeScript("set minimized of window id \(id) to false\nset index of window id \(id) to 1\nactivate")
         case .accessibility(let element):
             AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
@@ -108,6 +108,9 @@ final class WindowEngine {
         AXUIElementSetMessagingTimeout(application, 0.4)
         try await confirmAppActivation(targetPID: choice.owner.processIdentifier,
             frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+            focusReady: {
+                choice.owner.isActive && axElement(application, kAXFocusedWindowAttribute) != nil
+            },
             request: {
                 guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
                 AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
@@ -168,9 +171,11 @@ final class WindowEngine {
 }
 
 @MainActor func confirmAppActivation(targetPID: pid_t, frontmostPID: () -> pid_t?,
+                                    focusReady: () -> Bool = { true },
                                     request: () throws -> Void,
                                     pause: () async throws -> Void = { try await Task.sleep(nanoseconds: 100_000_000) }) async throws {
     let previousPID = frontmostPID()
+    var confirmed = false
     for _ in 0..<8 {
         try Task.checkCancellation()
         if let current = frontmostPID(), current != previousPID && current != targetPID {
@@ -179,7 +184,9 @@ final class WindowEngine {
         try request()
         try await pause()
         try Task.checkCancellation()
-        if frontmostPID() == targetPID { return }
+        let ready = frontmostPID() == targetPID && focusReady()
+        if ready && confirmed { return }
+        confirmed = ready
     }
     throw EngineError.failed("The window was selected, but its app did not gain keyboard focus. Try again after the desktop transition finishes.")
 }

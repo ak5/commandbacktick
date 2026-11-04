@@ -18,7 +18,7 @@ struct CycleState {
     var selected: String? { ids.isEmpty ? nil : ids[index] }
 }
 
-/// A missing physical key reading must never be treated as a confirmed release.
+/// Confirm a hold from the registered shortcut or a physical key reading before release.
 struct ReleaseState {
     private(set) var sawHeld = false
     mutating func update(held: Bool) -> Bool {

@@ -40,7 +40,8 @@ final class Shortcut {
         active = false
     }
     static var commandHeld: Bool {
-        CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_Command)) ||
+        CGEventSource.flagsState(.combinedSessionState).contains(.maskCommand) ||
+            CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_Command)) ||
             CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_RightCommand))
     }
     static var escapeHeld: Bool { CGEventSource.keyState(.hidSystemState, key: CGKeyCode(kVK_Escape)) }

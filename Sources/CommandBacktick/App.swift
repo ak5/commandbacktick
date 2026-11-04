@@ -115,11 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let app = NSWorkspace.shared.frontmostApplication,
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
             release = ReleaseState()
-            _ = release.update(held: Shortcut.commandHeld)
-            guard release.sawHeld else {
-                report("The physical Command key could not be read. Check Input Monitoring and retry while holding Command.")
-                return
-            }
+            // The registered Command shortcut proves the hold, even if delivery follows key-up.
+            _ = release.update(held: true)
             do {
                 let value = try engine.snapshot(app)
                 guard NSWorkspace.shared.frontmostApplication?.processIdentifier == app.processIdentifier else { return }
