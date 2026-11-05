@@ -8,6 +8,17 @@ func axValue(_ element: AXUIElement, _ name: String) -> CFTypeRef? {
 func axElements(_ element: AXUIElement, _ name: String) -> [AXUIElement] {
     axValue(element, name) as? [AXUIElement] ?? []
 }
+func applicationWindows(_ read: () -> (AXError, [AXUIElement])) throws -> [AXUIElement] {
+    var (status, windows) = read()
+    if status == .cannotComplete { (status, windows) = read() }
+    guard status == .success else {
+        if status == .apiDisabled {
+            throw EngineError.failed("Window access was denied. Grant CommandBacktick Accessibility access in Privacy & Security, then quit and reopen CommandBacktick.")
+        }
+        throw EngineError.failed("The app did not provide its window list (Accessibility error \(status.rawValue)). Wait for the desktop transition to finish and retry.")
+    }
+    return windows
+}
 func axElement(_ element: AXUIElement, _ name: String) -> AXUIElement? {
     guard let value = axValue(element, name), CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
     return unsafeBitCast(value, to: AXUIElement.self)

@@ -7,7 +7,7 @@ final class ActivationTests: XCTestCase {
         var checks = 0
         try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
             request: { requests += 1 }, pause: { checks += 1 })
-        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(requests, 1)
         XCTAssertEqual(checks, 2)
     }
 
@@ -16,7 +16,7 @@ final class ActivationTests: XCTestCase {
         var requests = 0
         try await confirmAppActivation(targetPID: 2, frontmostPID: { front },
             request: { requests += 1 }, pause: { if requests == 3 { front = 2 } })
-        XCTAssertEqual(requests, 4)
+        XCTAssertEqual(requests, 3)
         XCTAssertEqual(front, 2)
     }
 
@@ -24,14 +24,27 @@ final class ActivationTests: XCTestCase {
         var requests = 0
         try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
             focusReady: { requests >= 3 }, request: { requests += 1 }, pause: {})
-        XCTAssertEqual(requests, 4)
+        XCTAssertEqual(requests, 3)
     }
 
     @MainActor func testTransientFocusMustSettle() async throws {
         var requests = 0
+        var checks = 0
         try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
-            focusReady: { requests != 2 }, request: { requests += 1 }, pause: {})
-        XCTAssertEqual(requests, 4)
+            focusReady: { checks != 2 }, request: { requests += 1 }, pause: { checks += 1 })
+        XCTAssertEqual(requests, 2)
+        XCTAssertEqual(checks, 4)
+    }
+
+    @MainActor func testActiveAppWithWrongWindowCannotConfirm() async {
+        var requests = 0
+        do {
+            try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
+                focusReady: { false }, request: { requests += 1 }, pause: {})
+            XCTFail("App activation alone must not confirm selected-window focus")
+        } catch is EngineError { }
+        catch { XCTFail("Unexpected error: \(error)") }
+        XCTAssertEqual(requests, 8)
     }
 
     @MainActor func testAnotherAppTakingFocusCancelsFurtherRequests() async {

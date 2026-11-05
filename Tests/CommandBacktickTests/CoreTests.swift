@@ -1,7 +1,31 @@
 import XCTest
+import ApplicationServices
 @testable import CommandBacktick
 
 final class CoreTests: XCTestCase {
+    func testWindowReadRetriesTransientFailure() throws {
+        var reads = 0
+        let window = AXUIElementCreateApplication(12345)
+        let windows = try applicationWindows {
+            reads += 1
+            return reads == 1 ? (.cannotComplete, []) : (.success, [window])
+        }
+        XCTAssertEqual(reads, 2)
+        XCTAssertEqual(windows.count, 1)
+    }
+    func testWindowReadFailureIsNotAnEmptyList() {
+        for status in [AXError.apiDisabled, .cannotComplete, .invalidUIElement] {
+            var reads = 0
+            XCTAssertThrowsError(try applicationWindows {
+                reads += 1
+                return (status, [])
+            })
+            XCTAssertEqual(reads, status == .cannotComplete ? 2 : 1)
+        }
+    }
+    func testSuccessfulEmptyWindowListIsPreserved() throws {
+        XCTAssertTrue(try applicationWindows { (.success, []) }.isEmpty)
+    }
     func testLocalFirstAndReverseNavigation() {
         var state = CycleState(ids: ["A", "C", "B", "D"], focused: "A", local: ["A", "B"])
         XCTAssertEqual(state.ids, ["A", "B", "C", "D"])

@@ -22,6 +22,8 @@ final class SwitcherPanelTests: XCTestCase {
 
         overlay.show(snapshot: snapshot, state: state)
         let first = try window()
+        XCTAssertFalse(first.canBecomeKey)
+        XCTAssertFalse(first.canBecomeMain)
         XCTAssertTrue(first.collectionBehavior.contains(.canJoinAllSpaces))
         XCTAssertTrue(first.collectionBehavior.contains(.canJoinAllApplications))
         overlay.show(snapshot: snapshot, state: state)

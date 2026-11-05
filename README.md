@@ -7,8 +7,11 @@ Hold Command and tap ` to browse, add Shift to go backward, then release Command
 to select. Escape cancels. Identified windows on the current desktop come first,
 followed by the app's windows elsewhere.
 Selecting a window also requests keyboard focus for its owning app and checks
-that it stays foreground with a focused window over consecutive checks. A failed
+that it stays foreground over consecutive checks. Accessibility and Window-menu
+selections also request and verify focus on the selected window. A failed
 focus handoff is reported as an error.
+A transient Accessibility window-list failure is retried once. Permission and
+window-list read failures are reported separately from an empty window list.
 
 With Stage Manager, other apps' windows in the visible group come first. Starting
 from an editor grouped with a terminal gives: terminal → other local editor
@@ -243,7 +246,10 @@ open "$HOME/Applications/CommandBacktick.app" --args --debug
 ```
 
 It contains a synthetic interface preview and the last switching error. Quit and
-reopen normally to hide it. Debug mode does not enable event or window logging.
+reopen normally to hide it. Debug mode writes app bundle identifiers, window
+counts, window subroles, focus availability, and selected-window focus checks to
+standard error. It does not log window titles, terminal contents, profile
+metadata, or typed text.
 Errors still appear as alerts during normal use, and Permissions stays available.
 
 Additional explicit diagnostic commands:

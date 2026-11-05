@@ -114,6 +114,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if snapshot == nil {
             guard let app = NSWorkspace.shared.frontmostApplication,
                   app.processIdentifier != ProcessInfo.processInfo.processIdentifier else { return }
+            if CommandLine.arguments.contains("--debug") {
+                fputs("Shortcut source: bundle=\(app.bundleIdentifier ?? "unknown")\n", stderr)
+            }
             release = ReleaseState()
             // The registered Command shortcut proves the hold, even if delivery follows key-up.
             _ = release.update(held: true)

@@ -29,8 +29,15 @@ final class WindowEngine {
         let application = AXUIElementCreateApplication(app.processIdentifier)
         AXUIElementSetMessagingTimeout(application, 0.4)
         let focused = axElement(application, kAXFocusedWindowAttribute)
-        let native = axElements(application, kAXWindowsAttribute).filter {
-            axString($0, kAXSubroleAttribute) == kAXStandardWindowSubrole
+        let allNative = try applicationWindows {
+            var value: CFTypeRef?
+            let status = AXUIElementCopyAttributeValue(application, kAXWindowsAttribute as CFString, &value)
+            return (status, value as? [AXUIElement] ?? [])
+        }
+        let native = allNative.filter { axString($0, kAXSubroleAttribute) == kAXStandardWindowSubrole }
+        if CommandLine.arguments.contains("--debug") {
+            let roles = allNative.map { axString($0, kAXSubroleAttribute) }
+            fputs("Window read: bundle=\(app.bundleIdentifier ?? "unknown") active=\(app.isActive) windows=\(allNative.count) subroles=\(roles) focused=\(focused != nil)\n", stderr)
         }
         let visible = visibleBounds(pid: app.processIdentifier)
         let rows = windowMenu(app)
@@ -85,10 +92,13 @@ final class WindowEngine {
     @MainActor func activate(_ choice: WindowChoice, from snapshot: WindowSnapshot) async throws {
         try Task.checkCancellation()
         guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
+        var selectedWindow: AXUIElement?
+        var selectedMenuIndex: Int?
         switch choice.target {
         case .chrome(let id):
             _ = try chromeScript("set minimized of window id \(id) to false\nset index of window id \(id) to 1\nactivate")
         case .accessibility(let element):
+            selectedWindow = element
             AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             AXUIElementSetAttributeValue(element, kAXMainAttribute as CFString, kCFBooleanTrue)
             guard AXUIElementPerformAction(element, kAXRaiseAction as CFString) == .success else {
@@ -98,6 +108,7 @@ final class WindowEngine {
             let fresh = windowMenu(choice.owner)
             let index = resolvedMenuIndex(original: snapshot.windows.filter { $0.owner.processIdentifier == choice.owner.processIdentifier }.map(\.title),
                                           current: fresh.map(\.title), selected: ordinal)
+            selectedMenuIndex = index
             let target = index.map { fresh[$0] }
             guard let target, AXUIElementPerformAction(target.element, kAXPressAction as CFString) == .success else {
                 throw EngineError.failed("The app changed its Window menu. Open the switcher again.")
@@ -106,14 +117,53 @@ final class WindowEngine {
         // Raising a window does not transfer keyboard focus or the menu bar to its app.
         let application = AXUIElementCreateApplication(choice.owner.processIdentifier)
         AXUIElementSetMessagingTimeout(application, 0.4)
+        func resolveSelectedWindow() -> AXUIElement? {
+            if let selectedWindow { return selectedWindow }
+            guard case .menu = choice.target else { return nil }
+            let matches = axElements(application, kAXWindowsAttribute).filter {
+                axString($0, kAXSubroleAttribute) == kAXStandardWindowSubrole &&
+                    axString($0, kAXTitleAttribute).hasPrefix(choice.title)
+            }
+            if matches.count == 1 { return matches[0] }
+            // Identical titles need the selected menu item's mark to identify the focused window.
+            let fresh = windowMenu(choice.owner)
+            if let index = selectedMenuIndex, fresh.indices.contains(index),
+               fresh[index].title == choice.title, fresh[index].focused {
+                return axElement(application, kAXFocusedWindowAttribute)
+            }
+            return nil
+        }
         try await confirmAppActivation(targetPID: choice.owner.processIdentifier,
             frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
             focusReady: {
-                choice.owner.isActive && axElement(application, kAXFocusedWindowAttribute) != nil
+                guard choice.owner.isActive,
+                      let focused = axElement(application, kAXFocusedWindowAttribute) else { return false }
+                let ready: Bool
+                if case .chrome = choice.target { ready = true }
+                else {
+                    ready = selectedWindow.map { CFEqual($0, focused) } ?? false
+                }
+                if CommandLine.arguments.contains("--debug") {
+                    fputs("Focus check: bundle=\(choice.owner.bundleIdentifier ?? "unknown") selected=\(selectedWindow != nil) matches=\(ready)\n", stderr)
+                }
+                return ready
             },
             request: {
                 guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
-                AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+                selectedWindow = resolveSelectedWindow()
+                if let window = selectedWindow {
+                    let main = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
+                    let raise = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
+                    if CommandLine.arguments.contains("--debug") {
+                        fputs("Focus request: main=\(main.rawValue) raise=\(raise.rawValue)\n", stderr)
+                    }
+                } else if case .menu = choice.target {
+                    // Wait for the destination window instead of reactivating the departing desktop.
+                    return
+                }
+                if !choice.owner.isActive {
+                    AXUIElementSetAttributeValue(application, kAXFrontmostAttribute as CFString, kCFBooleanTrue)
+                }
                 _ = choice.owner.activate(options: [])
             })
     }
@@ -181,7 +231,7 @@ final class WindowEngine {
         if let current = frontmostPID(), current != previousPID && current != targetPID {
             throw CancellationError()
         }
-        try request()
+        if !confirmed { try request() }
         try await pause()
         try Task.checkCancellation()
         let ready = frontmostPID() == targetPID && focusReady()
