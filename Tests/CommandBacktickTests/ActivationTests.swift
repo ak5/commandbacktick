@@ -47,6 +47,24 @@ final class ActivationTests: XCTestCase {
         XCTAssertEqual(requests, 8)
     }
 
+    func testDesktopManagerIsTransientButUserAppsAreNot() {
+        XCTAssertNil(focusHandoffPID(pid: 3, bundleID: "com.apple.WindowManager"))
+        XCTAssertEqual(focusHandoffPID(pid: 3, bundleID: "example.editor"), 3)
+        XCTAssertEqual(focusHandoffPID(pid: 3, bundleID: nil), 3)
+    }
+
+    @MainActor func testDesktopManagerTransitionDoesNotCancelFocusRestoration() async throws {
+        var checks = 0
+        var requests = 0
+        try await confirmAppActivation(targetPID: 2,
+            frontmostPID: {
+                focusHandoffPID(pid: checks == 1 || checks == 2 ? 3 : 2,
+                    bundleID: checks == 1 || checks == 2 ? "com.apple.WindowManager" : "example.browser")
+            }, request: { requests += 1 }, pause: { checks += 1 })
+        XCTAssertEqual(requests, 3)
+        XCTAssertEqual(checks, 4)
+    }
+
     @MainActor func testAnotherAppTakingFocusCancelsFurtherRequests() async {
         var front: Int32 = 1
         var requests = 0

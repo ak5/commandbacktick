@@ -9,7 +9,9 @@ followed by the app's windows elsewhere.
 Selecting a window also requests keyboard focus for its owning app and checks
 that it stays foreground over consecutive checks. Accessibility and Window-menu
 selections also request and verify focus on the selected window. A failed
-focus handoff is reported as an error.
+focus handoff is reported as an error. Temporary WindowManager foreground changes
+during desktop transitions are retried; a different user app taking focus cancels
+the handoff.
 A transient Accessibility window-list failure is retried once. Permission and
 window-list read failures are reported separately from an empty window list.
 
@@ -129,6 +131,9 @@ whole bundle to avoid reusing a cached signing identity. Permission grants must
 still be approved in System Settings.
 
 ## Multiple Chrome profiles
+
+Chrome window requests address the foreground Chrome process by PID. Separate
+Chrome instances, including automation instances, are not combined in one cycle.
 
 Profile pictures are discovered from Chrome's local `Local State` metadata and
 account image files. No separate config or exported mapping is needed.
@@ -253,6 +258,9 @@ metadata, or typed text.
 Errors still appear as alerts during normal use, and Permissions stays available.
 
 Additional explicit diagnostic commands:
+
+Combine `--diagnose --debug` to check each running Chrome process and print only
+its window count and unique-ID count. Window titles and profile data are omitted.
 
 ```sh
 "$HOME/Applications/CommandBacktick.app/Contents/MacOS/CommandBacktick" --diagnose

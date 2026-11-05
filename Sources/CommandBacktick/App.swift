@@ -25,6 +25,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         if CommandLine.arguments.contains("--diagnose") {
             print("Accessibility: \(AXIsProcessTrusted()); Input Monitoring: \(CGPreflightListenEventAccess())")
+            if CommandLine.arguments.contains("--debug") {
+                for app in NSRunningApplication.runningApplications(withBundleIdentifier: "com.google.Chrome") {
+                    do {
+                        let windows = try ChromeWindows(pid: app.processIdentifier).windows()
+                        print("Chrome process: \(app.processIdentifier); windows: \(windows.count); unique IDs: \(Set(windows.map(\.id)).count)")
+                    } catch { print(error.localizedDescription) }
+                }
+            }
             NSApp.terminate(nil); return
         }
         if let index = CommandLine.arguments.firstIndex(of: "--render-preview"), CommandLine.arguments.count > index + 1 {

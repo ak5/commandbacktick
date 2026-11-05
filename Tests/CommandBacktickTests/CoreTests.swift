@@ -3,6 +3,15 @@ import ApplicationServices
 @testable import CommandBacktick
 
 final class CoreTests: XCTestCase {
+    func testChromeWindowDataValidation() throws {
+        XCTAssertEqual(try ChromeWindow(id: "42", title: "Example", minimized: false).id, 42)
+        XCTAssertEqual(try ChromeWindow(id: NSNumber(value: 43), title: "Example", minimized: true).id, 43)
+        for id: Any? in [nil, "not-an-id", "0", "-1"] {
+            XCTAssertThrowsError(try ChromeWindow(id: id, title: "Example", minimized: false))
+        }
+        XCTAssertThrowsError(try ChromeWindow(id: "42", title: nil, minimized: false))
+        XCTAssertThrowsError(try ChromeWindow(id: "42", title: "Example", minimized: nil))
+    }
     func testWindowReadRetriesTransientFailure() throws {
         var reads = 0
         let window = AXUIElementCreateApplication(12345)

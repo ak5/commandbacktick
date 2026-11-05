@@ -44,26 +44,23 @@ final class WindowEngine {
         var windows: [WindowChoice] = []
         if app.bundleIdentifier == "com.google.Chrome" {
             // The browser's IDs remain stable when its menu is rebuilt or a tab title changes.
-            let result = try chromeScript("""
-                set output to {}
-                repeat with w in windows
-                    set end of output to {id of w, name of w, bounds of w, minimized of w}
-                end repeat
-                return output
-                """)
-            for index in 1..<(result.numberOfItems + 1) {
-                guard let row = result.atIndex(index), let id = row.atIndex(1)?.int32Value,
-                      let title = row.atIndex(2)?.stringValue else { continue }
+            let browserWindows = try ChromeWindows(pid: app.processIdentifier).windows()
+            if CommandLine.arguments.contains("--debug") {
+                fputs("Chrome window read: pid=\(app.processIdentifier) windows=\(browserWindows.count)\n", stderr)
+            }
+            for (index, window) in browserWindows.enumerated() {
+                let id = window.id
+                let title = window.title
                 let candidates = native.filter { axString($0, kAXTitleAttribute).hasPrefix(title) }
-                let isFocused = index == 1
+                let isFocused = index == 0
                 let full = (isFocused ? focused : (candidates.count == 1 ? candidates.first : nil))
                     .map { axString($0, kAXTitleAttribute) } ?? ""
                 windows.append(WindowChoice(id: "browser:\(id)", owner: app, title: title, fullTitle: full,
-                    local: row.atIndex(4)?.booleanValue != true &&
+                    local: !window.minimized &&
                         (isFocused || (candidates.count == 1 && candidates.first.flatMap(axBounds).map { rect in
                             visible.contains { sameBounds($0, rect) }
                         } == true)),
-                    focused: isFocused, target: .chrome(Int(id))))
+                    focused: isFocused, target: .chrome(id)))
             }
         } else if !rows.isEmpty {
             for row in rows {
@@ -96,7 +93,7 @@ final class WindowEngine {
         var selectedMenuIndex: Int?
         switch choice.target {
         case .chrome(let id):
-            _ = try chromeScript("set minimized of window id \(id) to false\nset index of window id \(id) to 1\nactivate")
+            try ChromeWindows(pid: choice.owner.processIdentifier).activate(id: id)
         case .accessibility(let element):
             selectedWindow = element
             AXUIElementSetAttributeValue(element, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
@@ -134,15 +131,16 @@ final class WindowEngine {
             return nil
         }
         try await confirmAppActivation(targetPID: choice.owner.processIdentifier,
-            frontmostPID: { NSWorkspace.shared.frontmostApplication?.processIdentifier },
+            frontmostPID: {
+                let foreground = NSWorkspace.shared.frontmostApplication
+                return focusHandoffPID(pid: foreground?.processIdentifier, bundleID: foreground?.bundleIdentifier)
+            },
             focusReady: {
                 guard choice.owner.isActive,
                       let focused = axElement(application, kAXFocusedWindowAttribute) else { return false }
                 let ready: Bool
                 if case .chrome = choice.target { ready = true }
-                else {
-                    ready = selectedWindow.map { CFEqual($0, focused) } ?? false
-                }
+                else { ready = selectedWindow.map { CFEqual($0, focused) } ?? false }
                 if CommandLine.arguments.contains("--debug") {
                     fputs("Focus check: bundle=\(choice.owner.bundleIdentifier ?? "unknown") selected=\(selectedWindow != nil) matches=\(ready)\n", stderr)
                 }
@@ -205,19 +203,11 @@ final class WindowEngine {
         }
         return result
     }
+}
 
-    private func chromeScript(_ body: String) throws -> NSAppleEventDescriptor {
-        guard let script = NSAppleScript(source: "tell application \"Google Chrome\"\n\(body)\nend tell") else {
-            throw EngineError.failed("Could not create the browser window request.")
-        }
-        var error: NSDictionary?
-        let result = script.executeAndReturnError(&error)
-        if error != nil {
-            // Do not put returned browser data in errors or logs.
-            throw EngineError.failed("Chrome window access failed. Allow CommandBacktick → Google Chrome in Privacy & Security → Automation, then retry.")
-        }
-        return result
-    }
+func focusHandoffPID(pid: pid_t?, bundleID: String?) -> pid_t? {
+    // WindowManager can own the menu bar temporarily while a desktop transition is in flight.
+    bundleID == "com.apple.WindowManager" ? nil : pid
 }
 
 @MainActor func confirmAppActivation(targetPID: pid_t, frontmostPID: () -> pid_t?,
