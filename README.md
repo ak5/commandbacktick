@@ -8,10 +8,14 @@ to select. Escape cancels. Identified windows on the current desktop come first,
 followed by the app's windows elsewhere.
 Selecting a window also requests keyboard focus for its owning app and checks
 that it stays foreground over consecutive checks. Accessibility and Window-menu
-selections also request and verify focus on the selected window. A failed
-focus handoff is reported as an error. Temporary WindowManager foreground changes
+selections also request and verify focus on the selected window. The focused
+window must be onscreen; an offscreen Accessibility focus reference is not a
+successful handoff. Visibility is matched by window bounds; windows sharing the
+same bounds can remain ambiguous. A failed focus handoff is reported as an error.
+Temporary WindowManager foreground changes
 during desktop transitions are retried; a different user app taking focus cancels
-the handoff.
+the handoff. Shortcuts received while WindowManager owns foreground are ignored
+so an in-flight handoff can finish; retry after the desktop settles.
 A transient Accessibility window-list failure is retried once. Permission and
 window-list read failures are reported separately from an empty window list.
 

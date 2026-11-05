@@ -64,7 +64,7 @@ final class WindowEngine {
             }
         } else if !rows.isEmpty {
             for row in rows {
-                let matches = native.filter { axString($0, kAXTitleAttribute).hasPrefix(row.title) }
+                let matches = native.filter { axString($0, kAXTitleAttribute) == row.title }
                 let unique = matches.count == 1 ? matches[0] : nil
                 let exact = row.focused ? focused : unique
                 let local = exact.flatMap(axBounds).map { rect in visible.contains { sameBounds($0, rect) } } ?? false
@@ -114,19 +114,25 @@ final class WindowEngine {
         // Raising a window does not transfer keyboard focus or the menu bar to its app.
         let application = AXUIElementCreateApplication(choice.owner.processIdentifier)
         AXUIElementSetMessagingTimeout(application, 0.4)
+        func isVisible(_ window: AXUIElement) -> Bool {
+            guard let bounds = axBounds(window) else { return false }
+            return visibleBounds(pid: choice.owner.processIdentifier).contains { sameBounds($0, bounds) }
+        }
         func resolveSelectedWindow() -> AXUIElement? {
-            if let selectedWindow { return selectedWindow }
+            if case .accessibility(let window) = choice.target { return window }
+            if let selectedWindow, isVisible(selectedWindow) { return selectedWindow }
             guard case .menu = choice.target else { return nil }
             let matches = axElements(application, kAXWindowsAttribute).filter {
                 axString($0, kAXSubroleAttribute) == kAXStandardWindowSubrole &&
-                    axString($0, kAXTitleAttribute).hasPrefix(choice.title)
+                    axString($0, kAXTitleAttribute) == choice.title && isVisible($0)
             }
             if matches.count == 1 { return matches[0] }
             // Identical titles need the selected menu item's mark to identify the focused window.
             let fresh = windowMenu(choice.owner)
             if let index = selectedMenuIndex, fresh.indices.contains(index),
                fresh[index].title == choice.title, fresh[index].focused {
-                return axElement(application, kAXFocusedWindowAttribute)
+                guard let focused = axElement(application, kAXFocusedWindowAttribute), isVisible(focused) else { return nil }
+                return focused
             }
             return nil
         }
@@ -137,7 +143,8 @@ final class WindowEngine {
             },
             focusReady: {
                 guard choice.owner.isActive,
-                      let focused = axElement(application, kAXFocusedWindowAttribute) else { return false }
+                      let focused = axElement(application, kAXFocusedWindowAttribute),
+                      isVisible(focused) else { return false }
                 let ready: Bool
                 if case .chrome = choice.target { ready = true }
                 else { ready = selectedWindow.map { CFEqual($0, focused) } ?? false }
@@ -149,7 +156,7 @@ final class WindowEngine {
             request: {
                 guard !choice.owner.isTerminated else { throw EngineError.failed("The application has quit.") }
                 selectedWindow = resolveSelectedWindow()
-                if let window = selectedWindow {
+                if let window = selectedWindow, isVisible(window) {
                     let main = AXUIElementSetAttributeValue(window, kAXMainAttribute as CFString, kCFBooleanTrue)
                     let raise = AXUIElementPerformAction(window, kAXRaiseAction as CFString)
                     if CommandLine.arguments.contains("--debug") {

@@ -36,6 +36,15 @@ final class ActivationTests: XCTestCase {
         XCTAssertEqual(checks, 4)
     }
 
+    @MainActor func testStaleFocusedWindowOffscreenDoesNotConfirmHandoff() async throws {
+        var checks = 0
+        var requests = 0
+        try await confirmAppActivation(targetPID: 2, frontmostPID: { 2 },
+            focusReady: { checks >= 4 }, request: { requests += 1 }, pause: { checks += 1 })
+        XCTAssertEqual(checks, 5)
+        XCTAssertEqual(requests, 4)
+    }
+
     @MainActor func testActiveAppWithWrongWindowCannotConfirm() async {
         var requests = 0
         do {

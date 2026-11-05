@@ -115,6 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } catch { report(error.localizedDescription) }
     }
     private func step(_ direction: Int) {
+        // Keep the pending handoff alive when a shortcut lands in the desktop transition.
+        guard NSWorkspace.shared.frontmostApplication?.bundleIdentifier != "com.apple.WindowManager" else { return }
         activationTask?.cancel(); activationTask = nil
         guard AXIsProcessTrusted(), CGPreflightListenEventAccess() else {
             cancel(); report("A required permission is missing. Check Permissions in the menu."); return
