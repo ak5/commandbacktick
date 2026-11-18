@@ -43,9 +43,9 @@ final class SwitcherPanel {
             let card = NSView(frame: NSRect(x: x, y: 65, width: 128, height: 132))
             if i == state.index {
                 card.wantsLayer = true; card.layer?.cornerRadius = 14
-                card.layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(0.14).cgColor
-                card.layer?.borderColor = NSColor.labelColor.withAlphaComponent(0.2).cgColor
-                card.layer?.borderWidth = 1
+                card.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.25).cgColor
+                card.layer?.borderColor = NSColor.controlAccentColor.cgColor
+                card.layer?.borderWidth = 2
             }
             let image = NSImageView(frame: NSRect(x: 28, y: 49, width: 72, height: 72))
             image.image = choice.owner.icon; image.imageScaling = .scaleProportionallyUpOrDown
